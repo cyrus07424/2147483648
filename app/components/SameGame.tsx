@@ -34,6 +34,7 @@ const SameGame: React.FC = () => {
   const [boardSize, setBoardSize] = useState<BoardSize>(8);
   const [board, setBoard] = useState<GameBoard>(() => generateInitialBoard(8));
   const [gameWon, setGameWon] = useState(false);
+  const [convertedPanelPosition, setConvertedPanelPosition] = useState<[number, number] | null>(null);
 
   // Find all connected panels of the same number
   const findConnectedPanels = useCallback((board: GameBoard, startRow: number, startCol: number, boardSize: BoardSize): [number, number][] => {
@@ -144,6 +145,9 @@ const SameGame: React.FC = () => {
     // Need at least 2 connected panels to make a move
     if (connectedPanels.length < 2) return;
 
+    // Clear any previous converted panel marker
+    setConvertedPanelPosition(null);
+
     const newBoard = board.map(row => [...row]);
     const originalValue = board[row][col] as number;
 
@@ -174,6 +178,19 @@ const SameGame: React.FC = () => {
     // Refill the board
     const finalBoard = refillBoard(gravityBoard, boardSize);
 
+    // Find the converted panel position by finding the bottom-most, left-most panel with the new value
+    let convertedPosition: [number, number] | null = null;
+    for (let r = boardSize - 1; r >= 0; r--) {
+      for (let c = 0; c < boardSize; c++) {
+        if (finalBoard[r][c] === newValue) {
+          convertedPosition = [r, c];
+          break; // Take the first (leftmost) one we find in the bottom-most row
+        }
+      }
+      if (convertedPosition) break;
+    }
+
+    setConvertedPanelPosition(convertedPosition);
     setBoard(finalBoard);
   }, [board, gameWon, boardSize, findConnectedPanels, applyGravity, refillBoard]);
 
@@ -181,6 +198,7 @@ const SameGame: React.FC = () => {
   const resetGame = useCallback(() => {
     setBoard(generateInitialBoard(boardSize));
     setGameWon(false);
+    setConvertedPanelPosition(null);
   }, [boardSize]);
 
   // Handle board size change
@@ -188,6 +206,7 @@ const SameGame: React.FC = () => {
     setBoardSize(newSize);
     setBoard(generateInitialBoard(newSize));
     setGameWon(false);
+    setConvertedPanelPosition(null);
   }, []);
 
   // Get panel color based on value
@@ -298,26 +317,35 @@ const SameGame: React.FC = () => {
             }}
           >
             {board.map((row, rowIndex) =>
-              row.map((panel, colIndex) => (
-                <button
-                  key={`${rowIndex}-${colIndex}`}
-                  onClick={() => handlePanelClick(rowIndex, colIndex)}
-                  className={`
-                    aspect-square text-xs font-bold rounded border border-gray-400
-                    hover:border-gray-600 transition-colors flex items-center justify-center
-                    ${getPanelColor(panel)}
-                    ${panel === null ? 'cursor-default' : 'cursor-pointer'}
-                  `}
-                  style={{
-                    fontSize: boardSize > 32 ? '0.6rem' : boardSize > 16 ? '0.7rem' : '0.8rem',
-                    minWidth: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px',
-                    minHeight: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px'
-                  }}
-                  disabled={gameWon || panel === null}
-                >
-                  {panel}
-                </button>
-              ))
+              row.map((panel, colIndex) => {
+                const isConvertedPanel = convertedPanelPosition && 
+                  convertedPanelPosition[0] === rowIndex && 
+                  convertedPanelPosition[1] === colIndex;
+                
+                return (
+                  <button
+                    key={`${rowIndex}-${colIndex}`}
+                    onClick={() => handlePanelClick(rowIndex, colIndex)}
+                    className={`
+                      aspect-square text-xs font-bold rounded border transition-colors flex items-center justify-center
+                      ${isConvertedPanel 
+                        ? 'border-red-500 border-2' 
+                        : 'border-gray-400 hover:border-gray-600'
+                      }
+                      ${getPanelColor(panel)}
+                      ${panel === null ? 'cursor-default' : 'cursor-pointer'}
+                    `}
+                    style={{
+                      fontSize: boardSize > 32 ? '0.6rem' : boardSize > 16 ? '0.7rem' : '0.8rem',
+                      minWidth: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px',
+                      minHeight: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px'
+                    }}
+                    disabled={gameWon || panel === null}
+                  >
+                    {panel}
+                  </button>
+                );
+              })
             )}
           </div>
 
