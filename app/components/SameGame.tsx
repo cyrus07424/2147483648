@@ -5,16 +5,18 @@ import React, { useState, useCallback } from 'react';
 type Panel = number | null;
 type GameBoard = Panel[][];
 
-const BOARD_SIZE = 8;
+const BOARD_SIZES = [8, 16, 32, 64, 128] as const;
+type BoardSize = typeof BOARD_SIZES[number];
+
 const INITIAL_NUMBERS = [1, 2, 4];
 const TARGET_NUMBER = 2147483648;
 
 // Generate random initial board
-const generateInitialBoard = (): GameBoard => {
+const generateInitialBoard = (boardSize: BoardSize): GameBoard => {
   const board: GameBoard = [];
-  for (let row = 0; row < BOARD_SIZE; row++) {
+  for (let row = 0; row < boardSize; row++) {
     board[row] = [];
-    for (let col = 0; col < BOARD_SIZE; col++) {
+    for (let col = 0; col < boardSize; col++) {
       const randomIndex = Math.floor(Math.random() * INITIAL_NUMBERS.length);
       board[row][col] = INITIAL_NUMBERS[randomIndex];
     }
@@ -29,11 +31,12 @@ const getRandomNumber = (): number => {
 };
 
 const SameGame: React.FC = () => {
-  const [board, setBoard] = useState<GameBoard>(generateInitialBoard);
+  const [boardSize, setBoardSize] = useState<BoardSize>(8);
+  const [board, setBoard] = useState<GameBoard>(() => generateInitialBoard(8));
   const [gameWon, setGameWon] = useState(false);
 
   // Find all connected panels of the same number
-  const findConnectedPanels = useCallback((board: GameBoard, startRow: number, startCol: number): [number, number][] => {
+  const findConnectedPanels = useCallback((board: GameBoard, startRow: number, startCol: number, boardSize: BoardSize): [number, number][] => {
     const targetNumber = board[startRow][startCol];
     if (targetNumber === null) return [];
 
@@ -58,9 +61,9 @@ const SameGame: React.FC = () => {
           const newCol = col + dc;
           if (
             newRow >= 0 &&
-            newRow < BOARD_SIZE &&
+            newRow < boardSize &&
             newCol >= 0 &&
-            newCol < BOARD_SIZE &&
+            newCol < boardSize &&
             !visited.has(`${newRow},${newCol}`)
           ) {
             queue.push([newRow, newCol]);
@@ -73,13 +76,13 @@ const SameGame: React.FC = () => {
   }, []);
 
   // Apply gravity to make panels fall down and move left
-  const applyGravity = useCallback((board: GameBoard): GameBoard => {
-    const newBoard: GameBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+  const applyGravity = useCallback((board: GameBoard, boardSize: BoardSize): GameBoard => {
+    const newBoard: GameBoard = Array(boardSize).fill(null).map(() => Array(boardSize).fill(null));
 
     // For each column, collect non-null panels and place them at the bottom
-    for (let col = 0; col < BOARD_SIZE; col++) {
+    for (let col = 0; col < boardSize; col++) {
       const columnPanels: number[] = [];
-      for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let row = 0; row < boardSize; row++) {
         if (board[row][col] !== null) {
           columnPanels.push(board[row][col] as number);
         }
@@ -87,18 +90,18 @@ const SameGame: React.FC = () => {
 
       // Place panels from bottom up
       for (let i = 0; i < columnPanels.length; i++) {
-        newBoard[BOARD_SIZE - 1 - i][col] = columnPanels[columnPanels.length - 1 - i];
+        newBoard[boardSize - 1 - i][col] = columnPanels[columnPanels.length - 1 - i];
       }
     }
 
     // Move columns left to fill gaps
-    const finalBoard: GameBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+    const finalBoard: GameBoard = Array(boardSize).fill(null).map(() => Array(boardSize).fill(null));
     let targetCol = 0;
 
-    for (let col = 0; col < BOARD_SIZE; col++) {
+    for (let col = 0; col < boardSize; col++) {
       // Check if this column has any panels
       let hasPanel = false;
-      for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let row = 0; row < boardSize; row++) {
         if (newBoard[row][col] !== null) {
           hasPanel = true;
           break;
@@ -106,7 +109,7 @@ const SameGame: React.FC = () => {
       }
 
       if (hasPanel) {
-        for (let row = 0; row < BOARD_SIZE; row++) {
+        for (let row = 0; row < boardSize; row++) {
           finalBoard[row][targetCol] = newBoard[row][col];
         }
         targetCol++;
@@ -117,12 +120,12 @@ const SameGame: React.FC = () => {
   }, []);
 
   // Refill empty spaces from top and right
-  const refillBoard = useCallback((board: GameBoard): GameBoard => {
+  const refillBoard = useCallback((board: GameBoard, boardSize: BoardSize): GameBoard => {
     const newBoard = board.map(row => [...row]);
 
     // Fill empty spaces
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
         if (newBoard[row][col] === null) {
           newBoard[row][col] = getRandomNumber();
         }
@@ -136,7 +139,7 @@ const SameGame: React.FC = () => {
   const handlePanelClick = useCallback((row: number, col: number) => {
     if (gameWon || board[row][col] === null) return;
 
-    const connectedPanels = findConnectedPanels(board, row, col);
+    const connectedPanels = findConnectedPanels(board, row, col, boardSize);
     
     // Need at least 2 connected panels to make a move
     if (connectedPanels.length < 2) return;
@@ -150,39 +153,54 @@ const SameGame: React.FC = () => {
     });
 
     // Apply gravity
-    const gravityBoard = applyGravity(newBoard);
+    const gravityBoard = applyGravity(newBoard, boardSize);
 
-    // Place doubled value at the bottom-leftmost position where panels were removed
-    // Find the leftmost and bottommost position among removed panels
-    const leftmostCol = Math.min(...connectedPanels.map(([, c]) => c));
-    const bottommostRow = Math.max(...connectedPanels.map(([r]) => r));
+    // Place doubled value at the bottom-leftmost position
+    // After gravity, find the leftmost column that has space at the bottom
+    let targetCol = 0;
+    let targetRow = boardSize - 1;
     
-    // Place the new panel at the bottom-left position after gravity
-    // Find the bottom-most available position in the leftmost affected column
-    let targetRow = BOARD_SIZE - 1;
-    while (targetRow >= 0 && gravityBoard[targetRow][leftmostCol] !== null) {
-      targetRow--;
+    // Find the leftmost column with space
+    for (let col = 0; col < boardSize; col++) {
+      if (gravityBoard[boardSize - 1][col] === null) {
+        targetCol = col;
+        break;
+      }
     }
     
-    if (targetRow >= 0) {
-      const newValue = originalValue * 2;
-      gravityBoard[targetRow][leftmostCol] = newValue;
-      
-      // Check for win condition
-      if (newValue === TARGET_NUMBER) {
-        setGameWon(true);
+    // Find the bottom-most available position in that column
+    for (let row = boardSize - 1; row >= 0; row--) {
+      if (gravityBoard[row][targetCol] === null) {
+        targetRow = row;
+        break;
       }
+    }
+    
+    // Place the new panel at the bottom-left position
+    const newValue = originalValue * 2;
+    gravityBoard[targetRow][targetCol] = newValue;
+    
+    // Check for win condition
+    if (newValue === TARGET_NUMBER) {
+      setGameWon(true);
     }
 
     // Refill the board
-    const finalBoard = refillBoard(gravityBoard);
+    const finalBoard = refillBoard(gravityBoard, boardSize);
 
     setBoard(finalBoard);
-  }, [board, gameWon, findConnectedPanels, applyGravity, refillBoard]);
+  }, [board, gameWon, boardSize, findConnectedPanels, applyGravity, refillBoard]);
 
   // Reset game
   const resetGame = useCallback(() => {
-    setBoard(generateInitialBoard());
+    setBoard(generateInitialBoard(boardSize));
+    setGameWon(false);
+  }, [boardSize]);
+
+  // Handle board size change
+  const handleBoardSizeChange = useCallback((newSize: BoardSize) => {
+    setBoardSize(newSize);
+    setBoard(generateInitialBoard(newSize));
     setGameWon(false);
   }, []);
 
@@ -248,9 +266,33 @@ const SameGame: React.FC = () => {
           )}
 
           <div className="mb-6 text-center">
-            <p className="text-gray-600 mb-2">
+            <p className="text-gray-600 mb-4">
               同じ数字の隣接するパネルをクリックして消去し、2147483648を目指そう！
             </p>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                フィールドサイズ:
+              </label>
+              <div className="flex justify-center gap-2 flex-wrap">
+                {BOARD_SIZES.map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => handleBoardSizeChange(size)}
+                    className={`
+                      px-3 py-1 rounded text-sm font-medium transition-colors
+                      ${boardSize === size 
+                        ? 'bg-blue-500 text-white' 
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }
+                    `}
+                  >
+                    {size}×{size}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
             <button
               onClick={resetGame}
               className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
@@ -259,18 +301,32 @@ const SameGame: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-8 gap-1 max-w-md mx-auto bg-gray-300 p-2 rounded">
+          <div 
+            className={`
+              grid gap-1 max-w-4xl mx-auto bg-gray-300 p-2 rounded overflow-auto
+            `}
+            style={{
+              gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`,
+              aspectRatio: '1',
+              maxHeight: '80vh'
+            }}
+          >
             {board.map((row, rowIndex) =>
               row.map((panel, colIndex) => (
                 <button
                   key={`${rowIndex}-${colIndex}`}
                   onClick={() => handlePanelClick(rowIndex, colIndex)}
                   className={`
-                    w-12 h-12 text-sm font-bold rounded border border-gray-400
-                    hover:border-gray-600 transition-colors
+                    aspect-square text-xs font-bold rounded border border-gray-400
+                    hover:border-gray-600 transition-colors flex items-center justify-center
                     ${getPanelColor(panel)}
                     ${panel === null ? 'cursor-default' : 'cursor-pointer'}
                   `}
+                  style={{
+                    fontSize: boardSize > 32 ? '0.6rem' : boardSize > 16 ? '0.7rem' : '0.8rem',
+                    minWidth: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px',
+                    minHeight: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px'
+                  }}
                   disabled={gameWon || panel === null}
                 >
                   {panel}
