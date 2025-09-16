@@ -147,38 +147,24 @@ const SameGame: React.FC = () => {
     const newBoard = board.map(row => [...row]);
     const originalValue = board[row][col] as number;
 
+    // Find the bottom row among connected panels
+    const maxRow = Math.max(...connectedPanels.map(([r]) => r));
+    
+    // Find the leftmost column in that bottom row among connected panels
+    const bottomRowPanels = connectedPanels.filter(([r]) => r === maxRow);
+    const leftmostCol = Math.min(...bottomRowPanels.map(([, c]) => c));
+    
     // Remove connected panels
     connectedPanels.forEach(([r, c]) => {
       newBoard[r][c] = null;
     });
 
-    // Apply gravity
-    const gravityBoard = applyGravity(newBoard, boardSize);
-
-    // Place doubled value at the bottom-leftmost position
-    // After gravity, find the leftmost column that has space at the bottom
-    let targetCol = 0;
-    let targetRow = boardSize - 1;
-    
-    // Find the leftmost column with space
-    for (let col = 0; col < boardSize; col++) {
-      if (gravityBoard[boardSize - 1][col] === null) {
-        targetCol = col;
-        break;
-      }
-    }
-    
-    // Find the bottom-most available position in that column
-    for (let row = boardSize - 1; row >= 0; row--) {
-      if (gravityBoard[row][targetCol] === null) {
-        targetRow = row;
-        break;
-      }
-    }
-    
-    // Place the new panel at the bottom-left position
+    // Place the converted panel at the bottom-left position among connected panels
     const newValue = originalValue * 2;
-    gravityBoard[targetRow][targetCol] = newValue;
+    newBoard[maxRow][leftmostCol] = newValue;
+
+    // Apply gravity to move remaining panels down
+    const gravityBoard = applyGravity(newBoard, boardSize);
     
     // Check for win condition
     if (newValue === TARGET_NUMBER) {
