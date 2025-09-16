@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 
 type Panel = number | null;
 type GameBoard = Panel[][];
@@ -34,6 +34,9 @@ const SameGame: React.FC = () => {
   const [boardSize, setBoardSize] = useState<BoardSize>(8);
   const [board, setBoard] = useState<GameBoard>(() => generateInitialBoard(8));
   const [gameWon, setGameWon] = useState(false);
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [waitTime, setWaitTime] = useState(1000); // milliseconds
+  const autoModeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Find all connected panels of the same number
   const findConnectedPanels = useCallback((board: GameBoard, startRow: number, startCol: number, boardSize: BoardSize): [number, number][] => {
@@ -135,6 +138,22 @@ const SameGame: React.FC = () => {
     return newBoard;
   }, []);
 
+  // Find the first clickable panel, scanning from bottom-left
+  const findClickablePanel = useCallback((): [number, number] | null => {
+    // Scan from bottom-left to top-right
+    for (let row = boardSize - 1; row >= 0; row--) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          if (connectedPanels.length >= 2) {
+            return [row, col];
+          }
+        }
+      }
+    }
+    return null;
+  }, [board, boardSize, findConnectedPanels]);
+
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
     if (gameWon || board[row][col] === null) return;
@@ -181,6 +200,7 @@ const SameGame: React.FC = () => {
   const resetGame = useCallback(() => {
     setBoard(generateInitialBoard(boardSize));
     setGameWon(false);
+    setIsAutoMode(false); // Stop auto mode when resetting
   }, [boardSize]);
 
   // Handle board size change
@@ -188,7 +208,49 @@ const SameGame: React.FC = () => {
     setBoardSize(newSize);
     setBoard(generateInitialBoard(newSize));
     setGameWon(false);
+    setIsAutoMode(false); // Stop auto mode when changing board size
   }, []);
+
+  // Execute automatic mode
+  const executeAutoMode = useCallback(() => {
+    if (!isAutoMode || gameWon) return;
+
+    const clickablePanel = findClickablePanel();
+    if (clickablePanel) {
+      const [row, col] = clickablePanel;
+      handlePanelClick(row, col);
+      
+      // Schedule next execution
+      autoModeTimeoutRef.current = setTimeout(executeAutoMode, waitTime);
+    } else {
+      // No clickable panels found, stop auto mode
+      setIsAutoMode(false);
+    }
+  }, [isAutoMode, gameWon, findClickablePanel, handlePanelClick, waitTime]);
+
+  // Handle auto mode toggle
+  const toggleAutoMode = useCallback(() => {
+    setIsAutoMode(prev => !prev);
+  }, []);
+
+  // Effect to manage auto mode execution
+  useEffect(() => {
+    if (isAutoMode && !gameWon) {
+      autoModeTimeoutRef.current = setTimeout(executeAutoMode, waitTime);
+    } else {
+      if (autoModeTimeoutRef.current) {
+        clearTimeout(autoModeTimeoutRef.current);
+        autoModeTimeoutRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoModeTimeoutRef.current) {
+        clearTimeout(autoModeTimeoutRef.current);
+        autoModeTimeoutRef.current = null;
+      }
+    };
+  }, [isAutoMode, gameWon, executeAutoMode, waitTime]);
 
   // Get panel color based on value
   const getPanelColor = (value: number | null): string => {
@@ -279,6 +341,52 @@ const SameGame: React.FC = () => {
               </div>
             </div>
             
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+              <h3 className="text-lg font-semibold text-gray-700 mb-3">自動モード</h3>
+              
+              <div className="flex flex-col items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium text-gray-700">
+                    自動モード:
+                  </label>
+                  <button
+                    onClick={toggleAutoMode}
+                    disabled={gameWon}
+                    className={`
+                      px-4 py-2 rounded font-medium transition-colors
+                      ${isAutoMode 
+                        ? 'bg-red-500 hover:bg-red-600 text-white' 
+                        : 'bg-green-500 hover:bg-green-600 text-white'
+                      }
+                      ${gameWon ? 'opacity-50 cursor-not-allowed' : ''}
+                    `}
+                  >
+                    {isAutoMode ? 'OFF' : 'ON'}
+                  </button>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium text-gray-700">
+                    ウエイト時間: {waitTime}ms
+                  </label>
+                  <input
+                    type="range"
+                    min="100"
+                    max="3000"
+                    step="100"
+                    value={waitTime}
+                    onChange={(e) => setWaitTime(Number(e.target.value))}
+                    className="w-32"
+                    disabled={gameWon}
+                  />
+                </div>
+              </div>
+              
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                自動モードON時、左下から順番にクリック可能なパネルを自動でクリックします
+              </p>
+            </div>
+            
             <button
               onClick={resetGame}
               className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
@@ -301,19 +409,20 @@ const SameGame: React.FC = () => {
               row.map((panel, colIndex) => (
                 <button
                   key={`${rowIndex}-${colIndex}`}
-                  onClick={() => handlePanelClick(rowIndex, colIndex)}
+                  onClick={() => !isAutoMode && handlePanelClick(rowIndex, colIndex)}
                   className={`
                     aspect-square text-xs font-bold rounded border border-gray-400
                     hover:border-gray-600 transition-colors flex items-center justify-center
                     ${getPanelColor(panel)}
-                    ${panel === null ? 'cursor-default' : 'cursor-pointer'}
+                    ${panel === null || isAutoMode ? 'cursor-default' : 'cursor-pointer'}
+                    ${isAutoMode ? 'opacity-75' : ''}
                   `}
                   style={{
                     fontSize: boardSize > 32 ? '0.6rem' : boardSize > 16 ? '0.7rem' : '0.8rem',
                     minWidth: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px',
                     minHeight: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px'
                   }}
-                  disabled={gameWon || panel === null}
+                  disabled={gameWon || panel === null || isAutoMode}
                 >
                   {panel}
                 </button>
