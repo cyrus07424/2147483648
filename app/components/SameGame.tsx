@@ -340,6 +340,9 @@ const SameGame: React.FC = () => {
             <p>元の値の2倍のパネルが一番下の一番左に現れます。</p>
           </div>
         </div>
+        <footer className="text-center text-gray-400 mt-8">
+          &copy; 2025 <a href="https://github.com/cyrus07424" target="_blank">cyrus</a>
+        </footer>
       </div>
     </div>
   );
