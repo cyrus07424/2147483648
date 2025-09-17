@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 
 type Panel = number | null;
 type GameBoard = Panel[][];
@@ -35,6 +35,11 @@ const SameGame: React.FC = () => {
   const [board, setBoard] = useState<GameBoard>(() => generateInitialBoard(8));
   const [gameWon, setGameWon] = useState(false);
   const [convertedPanelPosition, setConvertedPanelPosition] = useState<[number, number] | null>(null);
+  
+  // Auto mode states
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [autoModeWaitTime, setAutoModeWaitTime] = useState(1000); // Default 1 second
+  const autoModeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Find all connected panels of the same number
   const findConnectedPanels = useCallback((board: GameBoard, startRow: number, startCol: number, boardSize: BoardSize): [number, number][] => {
@@ -75,6 +80,22 @@ const SameGame: React.FC = () => {
 
     return connected;
   }, []);
+
+  // Find first clickable panel from bottom-left
+  const findFirstClickablePanel = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
+    // Scan from bottom-left to top-right
+    for (let row = boardSize - 1; row >= 0; row--) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          if (connectedPanels.length >= 2) {
+            return [row, col];
+          }
+        }
+      }
+    }
+    return null;
+  }, [findConnectedPanels]);
 
   // Apply gravity to make panels fall down and move left
   const applyGravity = useCallback((board: GameBoard, boardSize: BoardSize): GameBoard => {
@@ -136,14 +157,105 @@ const SameGame: React.FC = () => {
     return newBoard;
   }, []);
 
+  // Auto mode effect
+  useEffect(() => {
+    if (isAutoMode && !gameWon) {
+      autoModeIntervalRef.current = setInterval(() => {
+        setBoard(currentBoard => {
+          const clickablePanel = findFirstClickablePanel(currentBoard, boardSize);
+          if (clickablePanel) {
+            const [row, col] = clickablePanel;
+            const connectedPanels = findConnectedPanels(currentBoard, row, col, boardSize);
+            
+            if (connectedPanels.length >= 2) {
+              // Clear any previous converted panel marker
+              setConvertedPanelPosition(null);
+
+              const newBoard = currentBoard.map(row => [...row]);
+              const originalValue = currentBoard[row][col] as number;
+
+              // Find the bottom row among connected panels
+              const maxRow = Math.max(...connectedPanels.map(([r]) => r));
+              
+              // Find the leftmost column in that bottom row among connected panels
+              const bottomRowPanels = connectedPanels.filter(([r]) => r === maxRow);
+              const leftmostCol = Math.min(...bottomRowPanels.map(([, c]) => c));
+              
+              // Remove connected panels
+              connectedPanels.forEach(([r, c]) => {
+                newBoard[r][c] = null;
+              });
+
+              // Place the converted panel at the bottom-left position among connected panels
+              const newValue = originalValue * 2;
+              newBoard[maxRow][leftmostCol] = newValue;
+
+              // Apply gravity to move remaining panels down
+              const gravityBoard = applyGravity(newBoard, boardSize);
+              
+              // Check for win condition
+              if (newValue === TARGET_NUMBER) {
+                setGameWon(true);
+                setIsAutoMode(false); // Stop auto mode when game is won
+              }
+
+              // Refill the board
+              const finalBoard = refillBoard(gravityBoard, boardSize);
+
+              // Find the converted panel position
+              let convertedPosition: [number, number] | null = null;
+              for (let r = boardSize - 1; r >= 0; r--) {
+                for (let c = 0; c < boardSize; c++) {
+                  if (finalBoard[r][c] === newValue) {
+                    convertedPosition = [r, c];
+                    break;
+                  }
+                }
+                if (convertedPosition) break;
+              }
+
+              setConvertedPanelPosition(convertedPosition);
+              return finalBoard;
+            }
+          }
+          return currentBoard;
+        });
+      }, autoModeWaitTime);
+    } else {
+      if (autoModeIntervalRef.current) {
+        clearInterval(autoModeIntervalRef.current);
+        autoModeIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoModeIntervalRef.current) {
+        clearInterval(autoModeIntervalRef.current);
+        autoModeIntervalRef.current = null;
+      }
+    };
+  }, [isAutoMode, gameWon, autoModeWaitTime, boardSize, findFirstClickablePanel, findConnectedPanels, applyGravity, refillBoard]);
+
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
     if (gameWon || board[row][col] === null) return;
 
+    // Temporarily pause auto mode during manual click
+    const wasAutoMode = isAutoMode;
+    if (isAutoMode) {
+      setIsAutoMode(false);
+    }
+
     const connectedPanels = findConnectedPanels(board, row, col, boardSize);
     
     // Need at least 2 connected panels to make a move
-    if (connectedPanels.length < 2) return;
+    if (connectedPanels.length < 2) {
+      // Resume auto mode if it was active
+      if (wasAutoMode) {
+        setIsAutoMode(true);
+      }
+      return;
+    }
 
     // Clear any previous converted panel marker
     setConvertedPanelPosition(null);
@@ -192,13 +304,19 @@ const SameGame: React.FC = () => {
 
     setConvertedPanelPosition(convertedPosition);
     setBoard(finalBoard);
-  }, [board, gameWon, boardSize, findConnectedPanels, applyGravity, refillBoard]);
+
+    // Resume auto mode if it was active
+    if (wasAutoMode) {
+      setTimeout(() => setIsAutoMode(true), 100); // Small delay to allow UI updates
+    }
+  }, [board, gameWon, boardSize, isAutoMode, findConnectedPanels, applyGravity, refillBoard]);
 
   // Reset game
   const resetGame = useCallback(() => {
     setBoard(generateInitialBoard(boardSize));
     setGameWon(false);
     setConvertedPanelPosition(null);
+    setIsAutoMode(false); // Stop auto mode when resetting
   }, [boardSize]);
 
   // Handle board size change
@@ -207,6 +325,7 @@ const SameGame: React.FC = () => {
     setBoard(generateInitialBoard(newSize));
     setGameWon(false);
     setConvertedPanelPosition(null);
+    setIsAutoMode(false); // Stop auto mode when changing board size
   }, []);
 
   // Get panel color based on value
@@ -304,6 +423,52 @@ const SameGame: React.FC = () => {
             >
               新しいゲーム
             </button>
+          </div>
+
+          {/* Auto Mode Controls */}
+          <div className="mb-6 text-center border-t pt-4 pb-4 bg-gray-50 rounded-lg">
+            <h3 className="text-lg font-medium text-gray-700 mb-4">自動モード</h3>
+            
+            <div className="flex flex-col gap-4 items-center">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={isAutoMode}
+                    onChange={(e) => setIsAutoMode(e.target.checked)}
+                    disabled={gameWon}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    自動モード {isAutoMode ? 'ON' : 'OFF'}
+                  </span>
+                </label>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700 min-w-fit">
+                  ウエイト時間:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="100"
+                    max="5000"
+                    step="100"
+                    value={autoModeWaitTime}
+                    onChange={(e) => setAutoModeWaitTime(Number(e.target.value))}
+                    className="w-32"
+                  />
+                  <span className="text-sm text-gray-600 min-w-fit">
+                    {autoModeWaitTime}ms
+                  </span>
+                </div>
+              </div>
+              
+              <p className="text-xs text-gray-500 max-w-md">
+                自動モードがONの場合、左下から順番にパネルを走査してクリック可能なパネルを自動でクリックします。
+              </p>
+            </div>
           </div>
 
           <div 
