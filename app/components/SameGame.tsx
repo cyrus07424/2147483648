@@ -426,7 +426,7 @@ const SameGame: React.FC = () => {
           </div>
 
           {/* Auto Mode Controls */}
-          <div className="mb-6 text-center border-t pt-4">
+          <div className="mb-6 text-center border-t pt-4 pb-4 bg-gray-50 rounded-lg">
             <h3 className="text-lg font-medium text-gray-700 mb-4">自動モード</h3>
             
             <div className="flex flex-col gap-4 items-center">
