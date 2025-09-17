@@ -8,6 +8,9 @@ type GameBoard = Panel[][];
 const BOARD_SIZES = [6, 8, 10, 12] as const;
 type BoardSize = typeof BOARD_SIZES[number];
 
+// Auto mode strategies
+type AutoModeStrategy = 'firstClickable' | 'mostAdjacent';
+
 const INITIAL_NUMBERS = [1, 2, 4];
 const TARGET_NUMBER = 2147483648;
 
@@ -39,6 +42,7 @@ const SameGame: React.FC = () => {
   // Auto mode states
   const [isAutoMode, setIsAutoMode] = useState(false);
   const [autoModeWaitTime, setAutoModeWaitTime] = useState(1000); // Default 1 second
+  const [autoModeStrategy, setAutoModeStrategy] = useState<AutoModeStrategy>('firstClickable');
   const autoModeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Find all connected panels of the same number
@@ -95,6 +99,26 @@ const SameGame: React.FC = () => {
       }
     }
     return null;
+  }, [findConnectedPanels]);
+
+  // Find panel with most connected adjacent panels
+  const findMostAdjacentPanel = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
+    let bestPanel: [number, number] | null = null;
+    let maxConnectedCount = 1; // Need at least 2 to be clickable
+
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          if (connectedPanels.length > maxConnectedCount) {
+            maxConnectedCount = connectedPanels.length;
+            bestPanel = [row, col];
+          }
+        }
+      }
+    }
+    
+    return bestPanel;
   }, [findConnectedPanels]);
 
   // Apply gravity to make panels fall down and move left
@@ -177,7 +201,9 @@ const SameGame: React.FC = () => {
     if (isAutoMode && !gameWon) {
       autoModeIntervalRef.current = setInterval(() => {
         setBoard(currentBoard => {
-          const clickablePanel = findFirstClickablePanel(currentBoard, boardSize);
+          const clickablePanel = autoModeStrategy === 'mostAdjacent' 
+            ? findMostAdjacentPanel(currentBoard, boardSize)
+            : findFirstClickablePanel(currentBoard, boardSize);
           if (clickablePanel) {
             const [row, col] = clickablePanel;
             const connectedPanels = findConnectedPanels(currentBoard, row, col, boardSize);
@@ -238,7 +264,7 @@ const SameGame: React.FC = () => {
         autoModeIntervalRef.current = null;
       }
     };
-  }, [isAutoMode, gameWon, autoModeWaitTime, boardSize, findFirstClickablePanel, findConnectedPanels, applyGravity, refillBoard]);
+  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findConnectedPanels, applyGravity, refillBoard]);
 
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
@@ -445,7 +471,7 @@ const SameGame: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <input
                     type="range"
-                    min="100"
+                    min="0"
                     max="5000"
                     step="100"
                     value={autoModeWaitTime}
@@ -458,8 +484,39 @@ const SameGame: React.FC = () => {
                 </div>
               </div>
               
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-700">
+                  戦略:
+                </label>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="autoModeStrategy"
+                      value="firstClickable"
+                      checked={autoModeStrategy === 'firstClickable'}
+                      onChange={(e) => setAutoModeStrategy(e.target.value as AutoModeStrategy)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">左下から順番</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="autoModeStrategy"
+                      value="mostAdjacent"
+                      checked={autoModeStrategy === 'mostAdjacent'}
+                      onChange={(e) => setAutoModeStrategy(e.target.value as AutoModeStrategy)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">隣接パネル数最大</span>
+                  </label>
+                </div>
+              </div>
+              
               <p className="text-xs text-gray-500 max-w-md">
-                自動モードがONの場合、左下から順番にパネルを走査してクリック可能なパネルを自動でクリックします。
+                自動モードがONの場合、選択した戦略に従ってクリック可能なパネルを自動でクリックします。
+                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先します。
               </p>
             </div>
           </div>
