@@ -155,6 +155,26 @@ const SameGame: React.FC = () => {
     return bestPanel;
   }, [findConnectedPanels]);
 
+  // Find panel with largest number and fewest connected adjacent panels, with fallback strategies
+  // This is the enhanced version that prevents getting stuck when the primary strategy fails
+  const findLargestNumberFewestAdjacentPanelWithFallback = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
+    // Primary strategy: largest number with fewest adjacent (2+ connected panels only)
+    const primaryResult = findLargestNumberFewestAdjacentPanel(board, boardSize);
+    if (primaryResult) {
+      return primaryResult;
+    }
+
+    // Fallback strategy 1: Find the panel with the most adjacent connections
+    const fallback1Result = findMostAdjacentPanel(board, boardSize);
+    if (fallback1Result) {
+      return fallback1Result;
+    }
+
+    // Fallback strategy 2: Find the first clickable panel (from bottom-left)
+    const fallback2Result = findFirstClickablePanel(board, boardSize);
+    return fallback2Result;
+  }, [findLargestNumberFewestAdjacentPanel, findMostAdjacentPanel, findFirstClickablePanel]);
+
   // Apply gravity to make panels fall down and move left
   // Returns both the new board and optionally the new position of a tracked panel
   const applyGravity = useCallback((board: GameBoard, boardSize: BoardSize, trackedPosition?: [number, number]): { board: GameBoard, trackedPosition?: [number, number] } => {
@@ -238,7 +258,7 @@ const SameGame: React.FC = () => {
           const clickablePanel = autoModeStrategy === 'mostAdjacent' 
             ? findMostAdjacentPanel(currentBoard, boardSize)
             : autoModeStrategy === 'largestNumberFewestAdjacent'
-            ? findLargestNumberFewestAdjacentPanel(currentBoard, boardSize)
+            ? findLargestNumberFewestAdjacentPanelWithFallback(currentBoard, boardSize)
             : findFirstClickablePanel(currentBoard, boardSize);
           if (clickablePanel) {
             const [row, col] = clickablePanel;
@@ -300,7 +320,7 @@ const SameGame: React.FC = () => {
         autoModeIntervalRef.current = null;
       }
     };
-  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findLargestNumberFewestAdjacentPanel, findConnectedPanels, applyGravity, refillBoard]);
+  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findConnectedPanels, applyGravity, refillBoard]);
 
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
