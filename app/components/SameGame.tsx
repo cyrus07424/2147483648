@@ -5,7 +5,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 type Panel = number | null;
 type GameBoard = Panel[][];
 
-const BOARD_SIZES = [8, 16, 32, 64, 128] as const;
+const BOARD_SIZES = [6, 8, 10, 12] as const;
 type BoardSize = typeof BOARD_SIZES[number];
 
 const INITIAL_NUMBERS = [1, 2, 4];
@@ -31,8 +31,8 @@ const getRandomNumber = (): number => {
 };
 
 const SameGame: React.FC = () => {
-  const [boardSize, setBoardSize] = useState<BoardSize>(8);
-  const [board, setBoard] = useState<GameBoard>(() => generateInitialBoard(8));
+  const [boardSize, setBoardSize] = useState<BoardSize>(6);
+  const [board, setBoard] = useState<GameBoard>(() => generateInitialBoard(6));
   const [gameWon, setGameWon] = useState(false);
   const [convertedPanelPosition, setConvertedPanelPosition] = useState<[number, number] | null>(null);
   
@@ -466,12 +466,13 @@ const SameGame: React.FC = () => {
 
           <div 
             className={`
-              grid gap-1 max-w-4xl mx-auto bg-gray-300 p-2 rounded overflow-auto
+              grid gap-1 w-full max-w-lg mx-auto bg-gray-300 p-2 rounded overflow-auto
             `}
             style={{
               gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`,
               aspectRatio: '1',
-              maxHeight: '80vh'
+              maxHeight: '80vh',
+              maxWidth: 'min(90vw, 32rem)'
             }}
           >
             {board.map((row, rowIndex) =>
@@ -494,9 +495,9 @@ const SameGame: React.FC = () => {
                       ${panel === null ? 'cursor-default' : 'cursor-pointer'}
                     `}
                     style={{
-                      fontSize: boardSize > 32 ? '0.6rem' : boardSize > 16 ? '0.7rem' : '0.8rem',
-                      minWidth: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px',
-                      minHeight: boardSize > 64 ? '16px' : boardSize > 32 ? '20px' : boardSize > 16 ? '24px' : '48px'
+                      fontSize: boardSize > 10 ? '0.7rem' : boardSize > 8 ? '0.8rem' : '0.9rem',
+                      minWidth: boardSize > 10 ? '32px' : boardSize > 8 ? '40px' : '48px',
+                      minHeight: boardSize > 10 ? '32px' : boardSize > 8 ? '40px' : '48px'
                     }}
                     disabled={gameWon || panel === null}
                   >
