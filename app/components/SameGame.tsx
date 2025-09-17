@@ -122,6 +122,7 @@ const SameGame: React.FC = () => {
   }, [findConnectedPanels]);
 
   // Find panel with largest number and fewest connected adjacent panels
+  // This strategy ensures only panels with at least 2 connected panels (including itself) are considered
   const findLargestNumberFewestAdjacentPanel = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
     let bestPanel: [number, number] | null = null;
     let maxNumber = 0;
@@ -137,10 +138,12 @@ const SameGame: React.FC = () => {
     }
 
     // Second pass: among panels with max number, find the one with fewest connections
+    // Only consider panels that have at least 2 connected panels (not isolated)
     for (let row = 0; row < boardSize; row++) {
       for (let col = 0; col < boardSize; col++) {
         if (board[row][col] !== null && board[row][col] === maxNumber) {
           const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          // Ensure at least 2 connected panels (including the panel itself) before considering
           if (connectedPanels.length >= 2 && connectedPanels.length < minConnectedCount) {
             minConnectedCount = connectedPanels.length;
             bestPanel = [row, col];
