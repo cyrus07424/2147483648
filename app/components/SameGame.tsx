@@ -9,7 +9,7 @@ const BOARD_SIZES = [6, 8, 10, 12] as const;
 type BoardSize = typeof BOARD_SIZES[number];
 
 // Auto mode strategies
-type AutoModeStrategy = 'firstClickable' | 'mostAdjacent';
+type AutoModeStrategy = 'firstClickable' | 'mostAdjacent' | 'largestNumberFewestAdjacent';
 
 const INITIAL_NUMBERS = [1, 2, 4];
 const TARGET_NUMBER = 2147483648;
@@ -121,6 +121,37 @@ const SameGame: React.FC = () => {
     return bestPanel;
   }, [findConnectedPanels]);
 
+  // Find panel with largest number and fewest connected adjacent panels
+  const findLargestNumberFewestAdjacentPanel = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
+    let bestPanel: [number, number] | null = null;
+    let maxNumber = 0;
+    let minConnectedCount = Infinity;
+
+    // First pass: find the maximum number on the board
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null && (board[row][col] as number) > maxNumber) {
+          maxNumber = board[row][col] as number;
+        }
+      }
+    }
+
+    // Second pass: among panels with max number, find the one with fewest connections
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null && board[row][col] === maxNumber) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          if (connectedPanels.length >= 2 && connectedPanels.length < minConnectedCount) {
+            minConnectedCount = connectedPanels.length;
+            bestPanel = [row, col];
+          }
+        }
+      }
+    }
+    
+    return bestPanel;
+  }, [findConnectedPanels]);
+
   // Apply gravity to make panels fall down and move left
   // Returns both the new board and optionally the new position of a tracked panel
   const applyGravity = useCallback((board: GameBoard, boardSize: BoardSize, trackedPosition?: [number, number]): { board: GameBoard, trackedPosition?: [number, number] } => {
@@ -203,6 +234,8 @@ const SameGame: React.FC = () => {
         setBoard(currentBoard => {
           const clickablePanel = autoModeStrategy === 'mostAdjacent' 
             ? findMostAdjacentPanel(currentBoard, boardSize)
+            : autoModeStrategy === 'largestNumberFewestAdjacent'
+            ? findLargestNumberFewestAdjacentPanel(currentBoard, boardSize)
             : findFirstClickablePanel(currentBoard, boardSize);
           if (clickablePanel) {
             const [row, col] = clickablePanel;
@@ -264,7 +297,7 @@ const SameGame: React.FC = () => {
         autoModeIntervalRef.current = null;
       }
     };
-  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findConnectedPanels, applyGravity, refillBoard]);
+  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findLargestNumberFewestAdjacentPanel, findConnectedPanels, applyGravity, refillBoard]);
 
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
@@ -511,12 +544,23 @@ const SameGame: React.FC = () => {
                     />
                     <span className="text-sm text-gray-700">隣接パネル数最大</span>
                   </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="autoModeStrategy"
+                      value="largestNumberFewestAdjacent"
+                      checked={autoModeStrategy === 'largestNumberFewestAdjacent'}
+                      onChange={(e) => setAutoModeStrategy(e.target.value as AutoModeStrategy)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">最大数字で隣接最少</span>
+                  </label>
                 </div>
               </div>
               
               <p className="text-xs text-gray-500 max-w-md">
                 自動モードがONの場合、選択した戦略に従ってクリック可能なパネルを自動でクリックします。
-                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先します。
+                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先し、「最大数字で隣接最少」は最も数字が大きいパネルのうち、最も隣接する同じパネルが少ないものを優先します。
               </p>
             </div>
           </div>
