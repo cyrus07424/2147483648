@@ -9,7 +9,7 @@ const BOARD_SIZES = [6, 8, 10, 12] as const;
 type BoardSize = typeof BOARD_SIZES[number];
 
 // Auto mode strategies
-type AutoModeStrategy = 'firstClickable' | 'mostAdjacent' | 'largestNumberFewestAdjacent';
+type AutoModeStrategy = 'firstClickable' | 'mostAdjacent' | 'largestNumberFewestAdjacent' | 'fewestAdjacent';
 
 const INITIAL_NUMBERS = [1, 2, 4];
 const TARGET_NUMBER = 2147483648;
@@ -112,6 +112,26 @@ const SameGame: React.FC = () => {
           const connectedPanels = findConnectedPanels(board, row, col, boardSize);
           if (connectedPanels.length > maxConnectedCount) {
             maxConnectedCount = connectedPanels.length;
+            bestPanel = [row, col];
+          }
+        }
+      }
+    }
+    
+    return bestPanel;
+  }, [findConnectedPanels]);
+  // Find panel with fewest connected adjacent panels (minimum adjacent panels strategy)
+  const findFewestAdjacentPanel = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
+    let bestPanel: [number, number] | null = null;
+    let minConnectedCount = Infinity;
+
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          // Only consider panels that have at least 2 connected panels (clickable condition)
+          if (connectedPanels.length >= 2 && connectedPanels.length < minConnectedCount) {
+            minConnectedCount = connectedPanels.length;
             bestPanel = [row, col];
           }
         }
@@ -259,6 +279,8 @@ const SameGame: React.FC = () => {
             ? findMostAdjacentPanel(currentBoard, boardSize)
             : autoModeStrategy === 'largestNumberFewestAdjacent'
             ? findLargestNumberFewestAdjacentPanelWithFallback(currentBoard, boardSize)
+            : autoModeStrategy === 'fewestAdjacent'
+            ? findFewestAdjacentPanel(currentBoard, boardSize)
             : findFirstClickablePanel(currentBoard, boardSize);
           if (clickablePanel) {
             const [row, col] = clickablePanel;
@@ -320,7 +342,7 @@ const SameGame: React.FC = () => {
         autoModeIntervalRef.current = null;
       }
     };
-  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findConnectedPanels, applyGravity, refillBoard]);
+  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findFewestAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findConnectedPanels, applyGravity, refillBoard]);
 
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
@@ -578,12 +600,23 @@ const SameGame: React.FC = () => {
                     />
                     <span className="text-sm text-gray-700">最大数字で隣接最少</span>
                   </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="autoModeStrategy"
+                      value="fewestAdjacent"
+                      checked={autoModeStrategy === 'fewestAdjacent'}
+                      onChange={(e) => setAutoModeStrategy(e.target.value as AutoModeStrategy)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">隣接パネル数最小</span>
+                  </label>
                 </div>
               </div>
               
               <p className="text-xs text-gray-500 max-w-md">
                 自動モードがONの場合、選択した戦略に従ってクリック可能なパネルを自動でクリックします。
-                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先し、「最大数字で隣接最少」は最も数字が大きいパネルのうち、最も隣接する同じパネルが少ないものを優先します。
+                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先し、「最大数字で隣接最少」は最も数字が大きいパネルのうち、最も隣接する同じパネルが少ないものを優先し、「隣接パネル数最小」は最も隣接する同じパネルが少ないものを優先します。
               </p>
             </div>
           </div>
