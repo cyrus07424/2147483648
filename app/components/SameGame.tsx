@@ -98,27 +98,37 @@ const SameGame: React.FC = () => {
   }, [findConnectedPanels]);
 
   // Apply gravity to make panels fall down and move left
-  const applyGravity = useCallback((board: GameBoard, boardSize: BoardSize): GameBoard => {
+  // Returns both the new board and optionally the new position of a tracked panel
+  const applyGravity = useCallback((board: GameBoard, boardSize: BoardSize, trackedPosition?: [number, number]): { board: GameBoard, trackedPosition?: [number, number] } => {
     const newBoard: GameBoard = Array(boardSize).fill(null).map(() => Array(boardSize).fill(null));
+    let newTrackedPosition: [number, number] | undefined = undefined;
 
     // For each column, collect non-null panels and place them at the bottom
     for (let col = 0; col < boardSize; col++) {
-      const columnPanels: number[] = [];
+      const columnPanels: { value: number, wasTracked: boolean }[] = [];
       for (let row = 0; row < boardSize; row++) {
         if (board[row][col] !== null) {
-          columnPanels.push(board[row][col] as number);
+          const wasTracked = !!(trackedPosition && trackedPosition[0] === row && trackedPosition[1] === col);
+          columnPanels.push({ value: board[row][col] as number, wasTracked });
         }
       }
 
       // Place panels from bottom up
       for (let i = 0; i < columnPanels.length; i++) {
-        newBoard[boardSize - 1 - i][col] = columnPanels[columnPanels.length - 1 - i];
+        const panelInfo = columnPanels[columnPanels.length - 1 - i];
+        const newRow = boardSize - 1 - i;
+        newBoard[newRow][col] = panelInfo.value;
+        
+        if (panelInfo.wasTracked) {
+          newTrackedPosition = [newRow, col];
+        }
       }
     }
 
     // Move columns left to fill gaps
     const finalBoard: GameBoard = Array(boardSize).fill(null).map(() => Array(boardSize).fill(null));
     let targetCol = 0;
+    let finalTrackedPosition: [number, number] | undefined = undefined;
 
     for (let col = 0; col < boardSize; col++) {
       // Check if this column has any panels
@@ -133,12 +143,17 @@ const SameGame: React.FC = () => {
       if (hasPanel) {
         for (let row = 0; row < boardSize; row++) {
           finalBoard[row][targetCol] = newBoard[row][col];
+          
+          // Update tracked position if this is the tracked panel
+          if (newTrackedPosition && newTrackedPosition[0] === row && newTrackedPosition[1] === col) {
+            finalTrackedPosition = [row, targetCol];
+          }
         }
         targetCol++;
       }
     }
 
-    return finalBoard;
+    return { board: finalBoard, trackedPosition: finalTrackedPosition };
   }, []);
 
   // Refill empty spaces from top and right
@@ -190,8 +205,8 @@ const SameGame: React.FC = () => {
               const newValue = originalValue * 2;
               newBoard[maxRow][leftmostCol] = newValue;
 
-              // Apply gravity to move remaining panels down
-              const gravityBoard = applyGravity(newBoard, boardSize);
+              // Apply gravity to move remaining panels down, tracking the converted panel
+              const gravityResult = applyGravity(newBoard, boardSize, [maxRow, leftmostCol]);
               
               // Check for win condition
               if (newValue === TARGET_NUMBER) {
@@ -200,21 +215,10 @@ const SameGame: React.FC = () => {
               }
 
               // Refill the board
-              const finalBoard = refillBoard(gravityBoard, boardSize);
+              const finalBoard = refillBoard(gravityResult.board, boardSize);
 
-              // Find the converted panel position
-              let convertedPosition: [number, number] | null = null;
-              for (let r = boardSize - 1; r >= 0; r--) {
-                for (let c = 0; c < boardSize; c++) {
-                  if (finalBoard[r][c] === newValue) {
-                    convertedPosition = [r, c];
-                    break;
-                  }
-                }
-                if (convertedPosition) break;
-              }
-
-              setConvertedPanelPosition(convertedPosition);
+              // Use the tracked position from gravity operation
+              setConvertedPanelPosition(gravityResult.trackedPosition || null);
               return finalBoard;
             }
           }
@@ -279,8 +283,8 @@ const SameGame: React.FC = () => {
     const newValue = originalValue * 2;
     newBoard[maxRow][leftmostCol] = newValue;
 
-    // Apply gravity to move remaining panels down
-    const gravityBoard = applyGravity(newBoard, boardSize);
+    // Apply gravity to move remaining panels down, tracking the converted panel
+    const gravityResult = applyGravity(newBoard, boardSize, [maxRow, leftmostCol]);
     
     // Check for win condition
     if (newValue === TARGET_NUMBER) {
@@ -288,21 +292,10 @@ const SameGame: React.FC = () => {
     }
 
     // Refill the board
-    const finalBoard = refillBoard(gravityBoard, boardSize);
+    const finalBoard = refillBoard(gravityResult.board, boardSize);
 
-    // Find the converted panel position by finding the bottom-most, left-most panel with the new value
-    let convertedPosition: [number, number] | null = null;
-    for (let r = boardSize - 1; r >= 0; r--) {
-      for (let c = 0; c < boardSize; c++) {
-        if (finalBoard[r][c] === newValue) {
-          convertedPosition = [r, c];
-          break; // Take the first (leftmost) one we find in the bottom-most row
-        }
-      }
-      if (convertedPosition) break;
-    }
-
-    setConvertedPanelPosition(convertedPosition);
+    // Use the tracked position from gravity operation
+    setConvertedPanelPosition(gravityResult.trackedPosition || null);
     setBoard(finalBoard);
 
     // Resume auto mode if it was active
