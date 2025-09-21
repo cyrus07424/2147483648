@@ -9,7 +9,7 @@ const BOARD_SIZES = [6, 8, 10, 12] as const;
 type BoardSize = typeof BOARD_SIZES[number];
 
 // Auto mode strategies
-type AutoModeStrategy = 'firstClickable' | 'mostAdjacent' | 'largestNumberFewestAdjacent' | 'fewestAdjacent';
+type AutoModeStrategy = 'firstClickable' | 'mostAdjacent' | 'largestNumberFewestAdjacent' | 'fewestAdjacent' | 'optimal';
 
 const INITIAL_NUMBERS = [1, 2, 4];
 const TARGET_NUMBER = 2147483648;
@@ -270,6 +270,115 @@ const SameGame: React.FC = () => {
     return newBoard;
   }, []);
 
+  // Optimal strategy: Prioritizes moving larger numbers to bottom-left and clearing small numbers that block consolidation
+  const findOptimalPanel = useCallback((board: GameBoard, boardSize: BoardSize): [number, number] | null => {
+    // Find all clickable panels first
+    const clickablePanels: { position: [number, number], value: number, connectedCount: number, score: number }[] = [];
+    
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          if (connectedPanels.length >= 2) {
+            const value = board[row][col] as number;
+            clickablePanels.push({
+              position: [row, col],
+              value: value,
+              connectedCount: connectedPanels.length,
+              score: 0 // Will be calculated below
+            });
+          }
+        }
+      }
+    }
+
+    if (clickablePanels.length === 0) return null;
+
+    // Calculate optimal scores for each clickable panel
+    clickablePanels.forEach(panel => {
+      let score = 0;
+      const [row, col] = panel.position;
+      const value = panel.value;
+      const connectedCount = panel.connectedCount;
+
+      // 1. Prioritize larger numbers (exponential bonus)
+      score += Math.pow(value, 1.5) * 10;
+
+      // 2. Bonus for panels that will end up in bottom-left area after gravity
+      // Check where the resulting panel will land after gravity
+      const simulatedBoard = board.map(row => [...row]);
+      const connectedPanels = findConnectedPanels(simulatedBoard, row, col, boardSize);
+      
+      // Simulate panel removal and gravity
+      connectedPanels.forEach(([r, c]) => {
+        simulatedBoard[r][c] = null;
+      });
+      
+      // Find where the new panel would be placed (bottom-left among connected panels)
+      const maxRow = Math.max(...connectedPanels.map(([r]) => r));
+      const bottomRowPanels = connectedPanels.filter(([r]) => r === maxRow);
+      const leftmostCol = Math.min(...bottomRowPanels.map(([, c]) => c));
+      
+      // Apply gravity simulation to predict final position
+      const gravityResult = applyGravity(simulatedBoard, boardSize, [maxRow, leftmostCol]);
+      const finalPosition = gravityResult.trackedPosition;
+      
+      if (finalPosition) {
+        const [finalRow, finalCol] = finalPosition;
+        // Strong bonus for bottom-left positioning (closer to bottom-left = higher bonus)
+        const bottomBonus = (boardSize - 1 - finalRow) * 50; // Higher for lower rows
+        const leftBonus = (boardSize - 1 - finalCol) * 30; // Higher for leftmost columns
+        score += bottomBonus + leftBonus;
+      }
+
+      // 3. Small number clearance bonus: If this is a small number blocking larger numbers
+      if (value <= 4) {
+        // Check if there are larger numbers that could be consolidated if this small number is cleared
+        let blockingLargerNumbers = false;
+        
+        // Look for larger numbers in the vicinity that might benefit from this clearance
+        for (let checkRow = Math.max(0, row - 2); checkRow < Math.min(boardSize, row + 3); checkRow++) {
+          for (let checkCol = Math.max(0, col - 2); checkCol < Math.min(boardSize, col + 3); checkCol++) {
+            if (board[checkRow][checkCol] && (board[checkRow][checkCol] as number) > value * 2) {
+              blockingLargerNumbers = true;
+              break;
+            }
+          }
+          if (blockingLargerNumbers) break;
+        }
+        
+        if (blockingLargerNumbers) {
+          score += connectedCount * 100; // Bonus for clearing small numbers that block larger ones
+        }
+      }
+
+      // 4. Connection efficiency: Prefer moves that clear more panels when dealing with larger numbers
+      if (value >= 8) {
+        score += connectedCount * value; // More connected panels = better for larger numbers
+      }
+
+      // 5. Strategic positioning: Bonus for moves that help concentrate large numbers
+      // Check if this move helps bring similar-valued large numbers closer together
+      if (value >= 16) {
+        let nearbyLargeNumbers = 0;
+        for (let checkRow = Math.max(0, row - 3); checkRow < Math.min(boardSize, row + 4); checkRow++) {
+          for (let checkCol = Math.max(0, col - 3); checkCol < Math.min(boardSize, col + 4); checkCol++) {
+            if (board[checkRow][checkCol] && (board[checkRow][checkCol] as number) >= value / 2) {
+              nearbyLargeNumbers++;
+            }
+          }
+        }
+        score += nearbyLargeNumbers * 20;
+      }
+
+      panel.score = score;
+    });
+
+    // Sort by score (highest first) and return the best option
+    clickablePanels.sort((a, b) => b.score - a.score);
+    return clickablePanels[0].position;
+  }, [findConnectedPanels, applyGravity]);
+
   // Auto mode effect
   useEffect(() => {
     if (isAutoMode && !gameWon) {
@@ -281,6 +390,8 @@ const SameGame: React.FC = () => {
             ? findLargestNumberFewestAdjacentPanelWithFallback(currentBoard, boardSize)
             : autoModeStrategy === 'fewestAdjacent'
             ? findFewestAdjacentPanel(currentBoard, boardSize)
+            : autoModeStrategy === 'optimal'
+            ? findOptimalPanel(currentBoard, boardSize)
             : findFirstClickablePanel(currentBoard, boardSize);
           if (clickablePanel) {
             const [row, col] = clickablePanel;
@@ -342,7 +453,7 @@ const SameGame: React.FC = () => {
         autoModeIntervalRef.current = null;
       }
     };
-  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findFewestAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findConnectedPanels, applyGravity, refillBoard]);
+  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findFewestAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findOptimalPanel, findConnectedPanels, applyGravity, refillBoard]);
 
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
@@ -611,12 +722,23 @@ const SameGame: React.FC = () => {
                     />
                     <span className="text-sm text-gray-700">隣接パネル数最小</span>
                   </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="autoModeStrategy"
+                      value="optimal"
+                      checked={autoModeStrategy === 'optimal'}
+                      onChange={(e) => setAutoModeStrategy(e.target.value as AutoModeStrategy)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">最適化戦略</span>
+                  </label>
                 </div>
               </div>
               
               <p className="text-xs text-gray-500 max-w-md">
                 自動モードがONの場合、選択した戦略に従ってクリック可能なパネルを自動でクリックします。
-                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先し、「最大数字で隣接最少」は最も数字が大きいパネルのうち、最も隣接する同じパネルが少ないものを優先し、「隣接パネル数最小」は最も隣接する同じパネルが少ないものを優先します。
+                「左下から順番」は従来の戦略、「隣接パネル数最大」は最も多くの隣接する同じパネルを持つパネルを優先し、「最大数字で隣接最少」は最も数字が大きいパネルのうち、最も隣接する同じパネルが少ないものを優先し、「隣接パネル数最小」は最も隣接する同じパネルが少ないものを優先し、「最適化戦略」は大きな数字を左下に集約しつつ、小さな数字を効率的に消去してクリア条件に近づける高度な戦略です。
               </p>
             </div>
           </div>
