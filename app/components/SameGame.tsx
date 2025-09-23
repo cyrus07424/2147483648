@@ -254,6 +254,55 @@ const SameGame: React.FC = () => {
     return { board: finalBoard, trackedPosition: finalTrackedPosition };
   }, []);
 
+  // Check if there are any clickable panels on the board
+  const hasClickablePanels = useCallback((board: GameBoard, boardSize: BoardSize): boolean => {
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          const connectedPanels = findConnectedPanels(board, row, col, boardSize);
+          if (connectedPanels.length >= 2) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }, [findConnectedPanels]);
+
+  // Shuffle all panels on the board
+  const shuffleBoard = useCallback((board: GameBoard, boardSize: BoardSize): GameBoard => {
+    // Collect all non-null panels
+    const allPanels: number[] = [];
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null) {
+          allPanels.push(board[row][col] as number);
+        }
+      }
+    }
+
+    // Shuffle the panels using Fisher-Yates algorithm
+    for (let i = allPanels.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allPanels[i], allPanels[j]] = [allPanels[j], allPanels[i]];
+    }
+
+    // Create new board with shuffled panels
+    const newBoard: GameBoard = Array(boardSize).fill(null).map(() => Array(boardSize).fill(null));
+    let panelIndex = 0;
+    
+    for (let row = 0; row < boardSize; row++) {
+      for (let col = 0; col < boardSize; col++) {
+        if (board[row][col] !== null && panelIndex < allPanels.length) {
+          newBoard[row][col] = allPanels[panelIndex];
+          panelIndex++;
+        }
+      }
+    }
+
+    return newBoard;
+  }, []);
+
   // Refill empty spaces from top and right
   const refillBoard = useCallback((board: GameBoard, boardSize: BoardSize): GameBoard => {
     const newBoard = board.map(row => [...row]);
@@ -430,7 +479,14 @@ const SameGame: React.FC = () => {
               }
 
               // Refill the board
-              const finalBoard = refillBoard(gravityResult.board, boardSize);
+              const refilledBoard = refillBoard(gravityResult.board, boardSize);
+
+              // Check if there are any clickable panels after refill
+              let finalBoard = refilledBoard;
+              if (!hasClickablePanels(refilledBoard, boardSize) && newValue !== TARGET_NUMBER) {
+                // If no clickable panels exist and game isn't won, shuffle the board
+                finalBoard = shuffleBoard(refilledBoard, boardSize);
+              }
 
               // Use the tracked position from gravity operation
               setConvertedPanelPosition(gravityResult.trackedPosition || null);
@@ -453,7 +509,7 @@ const SameGame: React.FC = () => {
         autoModeIntervalRef.current = null;
       }
     };
-  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findFewestAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findOptimalPanel, findConnectedPanels, applyGravity, refillBoard]);
+  }, [isAutoMode, gameWon, autoModeWaitTime, autoModeStrategy, boardSize, findFirstClickablePanel, findMostAdjacentPanel, findFewestAdjacentPanel, findLargestNumberFewestAdjacentPanelWithFallback, findOptimalPanel, findConnectedPanels, applyGravity, refillBoard, hasClickablePanels, shuffleBoard]);
 
   // Handle panel click
   const handlePanelClick = useCallback((row: number, col: number) => {
@@ -507,7 +563,14 @@ const SameGame: React.FC = () => {
     }
 
     // Refill the board
-    const finalBoard = refillBoard(gravityResult.board, boardSize);
+    const refilledBoard = refillBoard(gravityResult.board, boardSize);
+
+    // Check if there are any clickable panels after refill
+    let finalBoard = refilledBoard;
+    if (!hasClickablePanels(refilledBoard, boardSize) && !gameWon) {
+      // If no clickable panels exist, shuffle the board
+      finalBoard = shuffleBoard(refilledBoard, boardSize);
+    }
 
     // Use the tracked position from gravity operation
     setConvertedPanelPosition(gravityResult.trackedPosition || null);
@@ -517,7 +580,7 @@ const SameGame: React.FC = () => {
     if (wasAutoMode) {
       setTimeout(() => setIsAutoMode(true), 100); // Small delay to allow UI updates
     }
-  }, [board, gameWon, boardSize, isAutoMode, findConnectedPanels, applyGravity, refillBoard]);
+  }, [board, gameWon, boardSize, isAutoMode, findConnectedPanels, applyGravity, refillBoard, hasClickablePanels, shuffleBoard]);
 
   // Reset game
   const resetGame = useCallback(() => {
